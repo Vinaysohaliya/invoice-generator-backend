@@ -1,44 +1,71 @@
 import { Router } from "express";
-import PDFDocument from 'pdfkit';
 import fs from 'fs';
+import PDFDocument from "pdfkit-table";
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const router = Router();
 
-
-
-router.post('/pdf', (req, res) => {
-  console.log(req.body);
-
-
+router.post('/pdf', async (req, res) => {
   try {
-    
-  } catch (error) {
-    throw error;
-  }
+    const inputData = req.body;
 
+    // Define the output path for the generated PDF
+    const outputPath = join(__dirname, "../document.pdf");
 
-  const doc = new PDFDocument();
+    let doc = new PDFDocument({ margin: 30, size: 'A4' });
 
-  const writeStream = fs.createWriteStream('output.pdf');
-  doc.pipe(writeStream);
+    // Pipe the PDF document to a writable stream
+    const writeStream = fs.createWriteStream(outputPath);
+    doc.pipe(writeStream);
 
-  doc.fontSize(20).text('Hello, PDFKit!', { align: 'center' });
-  
+    const productData = inputData.products.map(product => [
+      product.name || 'null',
+      product.qty.toString(),
+      product.rate.toString(),
+      product.total.toString(),
+      product.gst.toString()
+    ]);
 
-  doc.end();
+    const tableData = {
+      title: "Invoice",
+      headers: ["Product", "Quantity", "Rate", "Total", "GST"],
+      rows: productData
+    };
 
-  return new Promise((resolve, reject) => {
+    doc.table(tableData);
+
+    doc.moveDown().text(`Grand Total: ${inputData.grandTotal}`, { align: 'right' });
+
+    doc.end();
+
+    // Wait for the PDF to finish writing
     writeStream.on('finish', () => {
-      console.log('PDF generated successfully');
-      resolve();
+      // Send the PDF file back to the client
+      res.download(outputPath, 'invoice.pdf', (err) => {
+        if (err) {
+          console.error('Error sending PDF:', err);
+          res.status(500).send('Error sending PDF');
+        } else {
+          // Delete the file from the server after sending it
+          fs.unlink(outputPath, (err) => {
+            if (err) {
+              console.error('Error deleting PDF:', err);
+            } else {
+              console.log('PDF deleted successfully');
+            }
+          });
+        }
+      });
     });
-    writeStream.on('error', (err) => {
-      reject(err);
-    });
-  });
+
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    res.status(500).send('Error generating PDF');
+  }
 });
-
-
-
 
 export default router;
